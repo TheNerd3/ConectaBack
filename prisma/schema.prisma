@@ -1,0 +1,403 @@
+// Modelo de datos de Conecta (PostgreSQL).
+// Derivado de las pantallas del prototipo y de la Especificación de Requerimientos (RF01 a RF27).
+// Diagrama visual: docs/DATABASE.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────── Enumeraciones ───────────────────────────
+
+enum Role {
+  EMPLOYEE
+  EMPLOYER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum VacancyStatus {
+  ACTIVE
+  PAUSED
+}
+
+// Etapas del pipeline (RF14). Solo una persona del lado empleador mueve un candidato de etapa.
+enum Stage {
+  REVIEW
+  INTERVIEW
+  HIRED
+  REJECTED
+}
+
+enum FileType {
+  PDF
+  DOCX
+}
+
+// ─────────────────────────── Cuentas ───────────────────────────
+
+model User {
+  id            Int        @id @default(autoincrement())
+  email         String     @unique
+  passwordHash  String
+  role          Role
+  status        UserStatus @default(ACTIVE)
+  mascotEnabled Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+
+  employeeProfile         EmployeeProfile?
+  companyMembers          CompanyMember[]
+  internalNotes           InternalNote[]
+  messages                Message[]
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
+  integrations            Integration[]
+  reports                 VacancyReport[]
+  auditLogs               AuditLog[]
+}
+
+// ─────────────────────────── Lado empleado ───────────────────────────
+
+model EmployeeProfile {
+  id         Int     @id @default(autoincrement())
+  userId     Int     @unique
+  fullName   String
+  bio        String?
+  experience Json?
+  photoUrl   String?
+
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skills       EmployeeSkill[]
+  languages    EmployeeLanguage[]
+  cvs          Cv[]
+  applications Application[]
+  follows      CompanyFollow[]
+  quizAttempts QuizAttempt[]
+}
+
+model Skill {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  employeeSkills EmployeeSkill[]
+  vacancySkills  VacancySkill[]
+  questions      SkillQuestion[]
+  attempts       QuizAttempt[]
+}
+
+model EmployeeSkill {
+  employeeId Int
+  skillId    Int
+  // Sello "Verificado" (RF07). Nunca penaliza si es false.
+  verified   Boolean @default(false)
+
+  employee EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  skill    Skill           @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, skillId])
+}
+
+model EmployeeLanguage {
+  id            Int     @id @default(autoincrement())
+  employeeId    Int
+  language      String
+  level         String
+  certification String?
+
+  employee EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+}
+
+// CV base (isBase = true, vacancyId nulo) o versión adaptada a una vacante (RF05).
+// El archivo vive en un almacenamiento de objetos; acá solo se guarda su referencia.
+model Cv {
+  id            Int      @id @default(autoincrement())
+  employeeId    Int
+  vacancyId     Int?
+  isBase        Boolean  @default(false)
+  fileName      String
+  fileType      FileType
+  storageKey    String
+  sizeBytes     Int
+  // Texto leído del archivo; lo usa el Analizador de CV (RF11).
+  extractedText String?
+  createdAt     DateTime @default(now())
+
+  employee     EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  vacancy      Vacancy?        @relation(fields: [vacancyId], references: [id], onDelete: SetNull)
+  applications Application[]
+}
+
+model CompanyFollow {
+  employeeId Int
+  companyId  Int
+
+  employee EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  company  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, companyId])
+}
+
+model SkillQuestion {
+  id           Int    @id @default(autoincrement())
+  skillId      Int
+  text         String
+  options      Json
+  correctIndex Int
+
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+}
+
+model QuizAttempt {
+  id         Int      @id @default(autoincrement())
+  employeeId Int
+  skillId    Int
+  score      Int
+  passed     Boolean
+  takenAt    DateTime @default(now())
+
+  employee EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  skill    Skill           @relation(fields: [skillId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────── Lado empleador ───────────────────────────
+
+model Company {
+  id                 Int                @id @default(autoincrement())
+  name               String
+  verificationStatus VerificationStatus @default(PENDING)
+  // Sello "Empresa Transparente" (RF18): da el boost de visibilidad a sus vacantes.
+  transparentSeal    Boolean            @default(false)
+  avgResponseHours   Float              @default(0)
+  logoUrl            String?
+  createdAt          DateTime           @default(now())
+
+  members            CompanyMember[]
+  invites            CompanyInvite[]
+  vacancies          Vacancy[]
+  follows            CompanyFollow[]
+  rejectionTemplates RejectionReasonTemplate[]
+}
+
+model CompanyMember {
+  companyId Int
+  userId    Int
+  role      String
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([companyId, userId])
+}
+
+model CompanyInvite {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  email     String
+  role      String
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model Vacancy {
+  id          Int           @id @default(autoincrement())
+  companyId   Int
+  title       String
+  modality    String
+  location    String
+  salaryMin   Int?
+  salaryMax   Int?
+  showSalary  Boolean       @default(false)
+  description String
+  status      VacancyStatus @default(ACTIVE)
+  featured    Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  skills       VacancySkill[]
+  applications Application[]
+  cvs          Cv[]
+  reports      VacancyReport[]
+
+  @@index([companyId, status])
+}
+
+model VacancySkill {
+  vacancyId Int
+  skillId   Int
+
+  vacancy Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  skill   Skill   @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([vacancyId, skillId])
+}
+
+// Banco de motivos de rechazo de la empresa (RF20).
+model RejectionReasonTemplate {
+  id        Int    @id @default(autoincrement())
+  companyId Int
+  text      String
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────── Postulaciones ───────────────────────────
+
+model Application {
+  id              Int      @id @default(autoincrement())
+  vacancyId       Int
+  employeeId      Int
+  cvId            Int
+  stage           Stage    @default(REVIEW)
+  // El motivo de rechazo es siempre opcional (RF15).
+  rejectionReason String?
+  matchPercent    Int
+  createdAt       DateTime @default(now())
+
+  vacancy  Vacancy         @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  employee EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  cv       Cv              @relation(fields: [cvId], references: [id])
+
+  coverLetter CoverLetter?
+  feedback    CandidateFeedback?
+  notes       InternalNote[]
+  messages    Message[]
+  interviews  Interview[]
+
+  // Una sola postulación por persona y vacante.
+  @@unique([vacancyId, employeeId])
+  @@index([vacancyId, stage])
+}
+
+model CoverLetter {
+  id            Int    @id @default(autoincrement())
+  applicationId Int    @unique
+  body          String
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+model CandidateFeedback {
+  id            Int     @id @default(autoincrement())
+  applicationId Int     @unique
+  rating        Int
+  comment       String?
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+// Nota visible solo para el equipo de reclutamiento. Nunca se expone al empleado (RF16).
+model InternalNote {
+  id            Int      @id @default(autoincrement())
+  applicationId Int
+  authorId      Int
+  text          String
+  createdAt     DateTime @default(now())
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  author      User        @relation(fields: [authorId], references: [id])
+}
+
+model Message {
+  id            Int      @id @default(autoincrement())
+  applicationId Int
+  senderId      Int
+  body          String
+  createdAt     DateTime @default(now())
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  sender      User        @relation(fields: [senderId], references: [id])
+
+  @@index([applicationId, createdAt])
+}
+
+model Interview {
+  id              Int      @id @default(autoincrement())
+  applicationId   Int
+  scheduledAt     DateTime
+  // Id del evento creado en Google Calendar, si el usuario conectó su cuenta.
+  calendarEventId String?
+  createdAt       DateTime @default(now())
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────── Comunicación e integraciones ───────────────────────────
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  type      String
+  text      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read, createdAt])
+}
+
+model NotificationPreference {
+  userId  Int
+  type    String
+  enabled Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, type])
+}
+
+model Integration {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  provider       String
+  // Siempre cifrado; nunca se devuelve por la API.
+  encryptedToken String
+  connectedAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+}
+
+// ─────────────────────────── Administración y auditoría ───────────────────────────
+
+model VacancyReport {
+  id         Int    @id @default(autoincrement())
+  vacancyId  Int
+  reporterId Int
+  reason     String
+  status     String @default("OPEN")
+
+  vacancy  Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  reporter User    @relation(fields: [reporterId], references: [id])
+}
+
+// Trazabilidad de acciones sensibles: rechazos, cambios de etapa, moderación, suspensiones (RNF08).
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  actorId   Int
+  action    String
+  entity    String
+  entityId  Int
+  createdAt DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([entity, entityId])
+}
