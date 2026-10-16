@@ -22,6 +22,7 @@ NestJS · TypeScript · PostgreSQL · Prisma · Swagger · Docker Compose
 npm install
 cp .env.example .env          # completar JWT_SECRET, ENCRYPTION_KEY y ADMIN_PASSWORD (ver comentarios)
 npm run db:up                 # PostgreSQL en Docker
+npm run mail:up               # Mailpit: SMTP de desarrollo, bandeja en http://localhost:8025
 npx prisma migrate dev        # aplica las migraciones
 npm run db:seed               # crea la cuenta de administración (ver abajo)
 npm run start:dev             # http://localhost:3000/api
@@ -52,6 +53,12 @@ El seed es idempotente: si el admin ya existe no lo modifica. Para regenerar el 
 | `POST /api/auth/register/employer` | público | Registro de empleador: crea la empresa en estado `PENDING` y lo asigna como `owner` |
 | `POST /api/auth/login` | público | Devuelve `accessToken`; si el usuario es ADMIN devuelve `requires2fa` y un `challengeToken` (5 min) |
 | `POST /api/auth/login/2fa` | público | `challengeToken` + código TOTP → `accessToken` |
+| `POST /api/auth/password/forgot` | público | Envía por email un link para restablecer la contraseña (respuesta siempre igual) |
+| `POST /api/auth/password/reset` | público | Token del email + contraseña nueva → `accessToken`; invalida las sesiones anteriores |
+| `GET /api/auth/oauth/:provider` | público | Inicia el login con `google` o `github` (`?role=EMPLOYEE|EMPLOYER` para cuentas nuevas) |
+| `GET /api/auth/oauth/:provider/callback` | público | Vuelta del proveedor; redirige al front (`/auth/callback`) |
+| `POST /api/auth/oauth/exchange` | público | Canjea el código de un solo uso del callback por un `accessToken` |
+| `POST /api/auth/oauth/complete-employer` | público | Completa el registro de empleador hecho con Google/GitHub (nombre de la empresa) |
 | `GET /api/auth/me` | los tres roles | Usuario autenticado |
 
 - Contraseñas con argon2id. El access token es un JWT que dura 1 hora (`JWT_EXPIRES_IN`).
@@ -60,20 +67,48 @@ El seed es idempotente: si el admin ya existe no lo modifica. Para regenerar el 
 - Los errores de login son genéricos ("Credenciales inválidas") y los usuarios `SUSPENDED` no pueden ingresar. Si se suspende a alguien con una sesión abierta, sus requests empiezan a fallar.
 - Rate limiting por IP: 5 intentos por minuto en login y 2FA, 10 en registro y 100 en el resto.
 
+### Login con Google y GitHub
+
+- Flujo *authorization code* con `state` y PKCE. El `state` y el verifier viajan en una cookie httpOnly firmada.
+- Si el email del proveedor está **verificado** y ya existe una cuenta con ese email, se vincula. Si no está verificado, no se vincula ni se crea nada.
+- Las cuentas nuevas de empleado se crean al toque y sin contraseña. Las de empleador pasan por un paso extra donde se pide el nombre de la empresa.
+- Un ADMIN nunca entra por OAuth: siempre usa contraseña + 2FA.
+- El JWT nunca viaja en la URL. El callback deja en el fragmento (`#code=`) un código de un solo uso de 60 segundos, y el front lo canjea.
+
+**Configurar las credenciales** (si faltan, el botón vuelve al login con "no disponible"):
+
+1. **Google**: en [Google Cloud Console](https://console.cloud.google.com/apis/credentials) creá un "ID de cliente de OAuth" de tipo *Aplicación web*.
+   - URI de redireccionamiento autorizado: `http://localhost:3000/api/auth/oauth/google/callback`.
+   - Copiá el ID y el secreto a `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`.
+2. **GitHub**: en *Settings → Developer settings → OAuth Apps → New OAuth App* (<https://github.com/settings/developers>).
+   - *Authorization callback URL*: `http://localhost:3000/api/auth/oauth/github/callback`.
+   - Copiá el Client ID y un Client secret nuevo a `GITHUB_CLIENT_ID` y `GITHUB_CLIENT_SECRET`.
+3. En producción, usá las URLs reales y definí `API_PUBLIC_URL` y `FRONT_URL`. Con `NODE_ENV=production` la cookie de estado es `Secure`.
+
+### Recuperar contraseña
+
+- Solo para EMPLOYEE y EMPLOYER: el ADMIN cambia su contraseña con el seed.
+- El link vence en 30 minutos y es de un solo uso. Pedir otro anula el anterior.
+- En la DB solo se guarda el hash SHA-256 del token.
+- También sirve para que una cuenta creada con Google/GitHub defina una contraseña.
+- Emails por SMTP (`SMTP_*`, `MAIL_FROM`). En desarrollo, `npm run mail:up` levanta Mailpit y los emails se ven en <http://localhost:8025>.
+
 **Mejoras pendientes:**
 - Refresh token y access token de vida más corta.
+- Los códigos de canje de OAuth viven en memoria: alcanza con una instancia de la API. Para escalar, moverlos a Redis o a la DB.
 - Evitar que se reuse un código TOTP dentro de su ventana de validez.
 - Verificación de email en el registro: hoy el registro responde 409 si el email ya está en uso.
 
 ## Estructura
 
 ```
-prisma/schema.prisma   # modelo de datos (26 tablas)
+prisma/schema.prisma   # modelo de datos (28 tablas)
 src/
 ├── main.ts            # prefijo /api, CORS, validación, Swagger
 ├── app.module.ts
 ├── prisma/            # PrismaService global
-├── auth/              # registro, login, 2FA, guards y decoradores @Public/@Roles
+├── auth/              # registro, login, 2FA, OAuth, recuperar contraseña, guards y @Public/@Roles
+├── mail/              # envío de emails por SMTP
 ├── common/crypto.ts   # cifrado AES-256-GCM de secretos
 ├── config/            # validación de variables de entorno
 └── health/
@@ -84,7 +119,7 @@ docs/DATABASE.md       # diagrama y reglas del modelo
 
 ## Modelo de datos
 
-26 tablas y 6 enumeraciones. Resumen y diagrama en [docs/DATABASE.md](docs/DATABASE.md).
+28 tablas y 7 enumeraciones. Resumen y diagrama en [docs/DATABASE.md](docs/DATABASE.md).
 
 ## Hoja de ruta
 
