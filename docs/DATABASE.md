@@ -46,6 +46,7 @@ erDiagram
 | UserStatus | ACTIVE, SUSPENDED |
 | VerificationStatus | PENDING, APPROVED, REJECTED |
 | VacancyStatus | ACTIVE, PAUSED |
+| Modality | REMOTE, HYBRID, ONSITE |
 | Stage | REVIEW, INTERVIEW, HIRED, REJECTED |
 | FileType | PDF, DOCX |
 | OAuthProvider | GOOGLE, GITHUB |
@@ -56,6 +57,9 @@ erDiagram
 - `Cv.isBase = true` y `vacancyId` nulo es el CV base; con `vacancyId` es una versión adaptada.
 - El archivo del CV vive en almacenamiento de objetos (`storageKey`); `extractedText` lo usa el analizador.
 - `rejectionReason` es siempre opcional.
+- `Vacancy.salaryMin/Max` solo se exponen si `showSalary = true`. `listedSalaryMin/Max` es la copia visible (nula si el salario está oculto) y es lo único que usan los filtros y el orden por salario, para no filtrar información oculta.
+- Las vacantes de empresas con `transparentSeal` se listan primero ("destacadas"); el resto nunca se oculta. `Vacancy.featured` no se usa.
+- Solo las vacantes `ACTIVE` de empresas `APPROVED` son visibles para el empleado; solo una empresa `APPROVED` puede publicar.
 - `InternalNote` jamás se devuelve en endpoints de empleado.
 - Los datos sensibles del candidato se ocultan según `Application.stage`.
 - `stage` solo lo cambia una persona y cada cambio se registra en `AuditLog`.

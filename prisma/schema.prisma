@@ -35,6 +35,12 @@ enum VacancyStatus {
   PAUSED
 }
 
+enum Modality {
+  REMOTE
+  HYBRID
+  ONSITE
+}
+
 // Etapas del pipeline (RF14). Solo una persona del lado empleador mueve un candidato de etapa.
 enum Stage {
   REVIEW
@@ -256,18 +262,24 @@ model CompanyInvite {
 }
 
 model Vacancy {
-  id          Int           @id @default(autoincrement())
-  companyId   Int
-  title       String
-  modality    String
-  location    String
-  salaryMin   Int?
-  salaryMax   Int?
-  showSalary  Boolean       @default(false)
-  description String
-  status      VacancyStatus @default(ACTIVE)
-  featured    Boolean       @default(false)
-  createdAt   DateTime      @default(now())
+  id              Int           @id @default(autoincrement())
+  companyId       Int
+  title           String
+  modality        Modality
+  location        String
+  // Rango salarial cargado por la empresa. Solo se expone si showSalary = true.
+  salaryMin       Int?
+  salaryMax       Int?
+  showSalary      Boolean       @default(false)
+  // Copia del rango visible (null si showSalary = false). Filtrar y ordenar por salario usa solo
+  // estas columnas, para que un salario oculto no se pueda deducir. Las mantiene VacanciesService.
+  listedSalaryMin Int?
+  listedSalaryMax Int?
+  description     String
+  status          VacancyStatus @default(ACTIVE)
+  // Sin uso: "destacada" se deriva de Company.transparentSeal.
+  featured        Boolean       @default(false)
+  createdAt       DateTime      @default(now())
 
   company      Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   skills       VacancySkill[]
@@ -276,6 +288,7 @@ model Vacancy {
   reports      VacancyReport[]
 
   @@index([companyId, status])
+  @@index([status, createdAt])
 }
 
 model VacancySkill {
