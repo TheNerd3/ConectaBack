@@ -1,16 +1,11 @@
 import { Controller, Get, INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Test } from '@nestjs/testing';
 import { Role, UserStatus } from '@prisma/client';
-import * as argon2 from 'argon2';
 import { generate, generateSecret } from 'otplib';
-import request from 'supertest';
-import { AppModule } from '../src/app.module';
-import { configureApp } from '../src/app.setup';
 import { Roles } from '../src/auth/decorators/roles.decorator';
 import { encrypt, parseEncryptionKey } from '../src/common/crypto';
-import { PrismaService } from '../src/prisma/prisma.service';
 import { FakePrisma } from './fake-prisma';
+import { createTestApp, PASSWORD, TestApp } from './test-app';
 
 // Rutas que solo existen en el test, para verificar los guards globales.
 @Controller('test')
@@ -34,42 +29,23 @@ class GuardProbeController {
   }
 }
 
-const PASSWORD = 'contraseña-segura';
-
 describe('Auth (e2e)', () => {
+  let t: TestApp;
   let app: INestApplication;
   let prisma: FakePrisma;
   let jwt: JwtService;
-  let http: ReturnType<typeof request>;
+  let http: TestApp['http'];
 
   // App nueva por test: el rate limit (en memoria) no se arrastra entre tests.
   beforeEach(async () => {
-    prisma = new FakePrisma();
-    const moduleRef = await Test.createTestingModule({
-      imports: [AppModule],
-      controllers: [GuardProbeController],
-    })
-      .overrideProvider(PrismaService)
-      .useValue(prisma)
-      .compile();
-
-    app = moduleRef.createNestApplication();
-    configureApp(app);
-    await app.init();
-    jwt = moduleRef.get(JwtService);
-    http = request(app.getHttpServer());
+    t = await createTestApp([GuardProbeController]);
+    ({ app, prisma, jwt, http } = t);
   });
 
   afterEach(() => app.close());
 
-  async function insertUser(role: Role, extra: Partial<Parameters<FakePrisma['insert']>[0]> = {}) {
-    return prisma.insert({
-      email: `${role.toLowerCase()}@test.com`,
-      passwordHash: await argon2.hash(PASSWORD),
-      role,
-      ...extra,
-    });
-  }
+  const insertUser: TestApp['insertUser'] = (role, extra) => t.insertUser(role, extra);
+  const tokenFor: TestApp['tokenFor'] = (user, purpose) => t.tokenFor(user, purpose);
 
   async function insertAdmin() {
     const secret = generateSecret();
@@ -77,9 +53,6 @@ describe('Auth (e2e)', () => {
     const admin = await insertUser(Role.ADMIN, { totpSecretEncrypted: encrypt(secret, key) });
     return { admin, secret };
   }
-
-  const tokenFor = (user: { id: number; role: Role }, purpose: 'access' | '2fa' = 'access') =>
-    jwt.signAsync({ sub: user.id, role: user.role, purpose });
 
   describe('registro', () => {
     it('registra un EMPLOYEE con perfil y devuelve un token que sirve para /auth/me', async () => {
