@@ -9,5 +9,12 @@ services:
       - '5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
+  # Servidor SMTP de desarrollo: captura los emails (ej.: recuperar contraseña).
+  # Bandeja web en http://localhost:8025
+  mail:
+    image: axllent/mailpit:v1.27
+    ports:
+      - '1025:1025'
+      - '8025:8025'
 volumes:
   pgdata:
