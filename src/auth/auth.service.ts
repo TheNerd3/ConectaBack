@@ -20,7 +20,7 @@ const CHALLENGE_EXPIRES_IN_SECONDS = 5 * 60;
 // Tolerancia de ±30 s (un paso TOTP) por desfase de reloj del celular.
 const TOTP_EPOCH_TOLERANCE = 30;
 
-const AUTH_USER_SELECT = {
+export const AUTH_USER_SELECT = {
   id: true,
   email: true,
   role: true,
@@ -136,7 +136,8 @@ export class AuthService implements OnModuleInit {
     }
   }
 
-  private async issueAccessToken(user: Pick<AuthUser, 'id' | 'role'>): Promise<AccessTokenDto> {
+  /** Emite el access token de una sesión ya validada (login, 2FA, OAuth, reset de contraseña). */
+  async issueAccessToken(user: Pick<AuthUser, 'id' | 'role'>): Promise<AccessTokenDto> {
     return { accessToken: await this.sign(user, 'access') };
   }
 

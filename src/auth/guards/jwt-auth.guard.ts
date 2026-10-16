@@ -26,7 +26,7 @@ export class JwtAuthGuard implements CanActivate {
     const token = extractBearer(request);
     if (!token) throw new UnauthorizedException('No autenticado');
 
-    let payload: JwtPayload;
+    let payload: JwtPayload & { iat?: number };
     try {
       payload = await this.jwt.verifyAsync<JwtPayload>(token);
     } catch {
@@ -38,11 +38,16 @@ export class JwtAuthGuard implements CanActivate {
     // Se relee el usuario en cada request: una suspensión corta también las sesiones abiertas.
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, role: true, status: true, mascotEnabled: true },
+      select: { id: true, email: true, role: true, status: true, mascotEnabled: true, passwordChangedAt: true },
     });
     if (!user || user.status === UserStatus.SUSPENDED) throw new UnauthorizedException('No autenticado');
+    // Un cambio de contraseña invalida los tokens emitidos antes.
+    if (user.passwordChangedAt && (payload.iat ?? 0) < Math.floor(user.passwordChangedAt.getTime() / 1000)) {
+      throw new UnauthorizedException('No autenticado');
+    }
 
-    request.user = user;
+    const { passwordChangedAt: _, ...authUser } = user;
+    request.user = authUser;
     return true;
   }
 }
