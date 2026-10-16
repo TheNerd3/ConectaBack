@@ -34,6 +34,8 @@ erDiagram
   User ||--o{ Integration : conecta
   Vacancy ||--o{ VacancyReport : denunciada
   User ||--o{ AuditLog : genera
+  User ||--o{ OAuthAccount : vincula
+  User ||--o{ PasswordResetToken : solicita
 ```
 
 ## Enumeraciones
@@ -46,6 +48,7 @@ erDiagram
 | VacancyStatus | ACTIVE, PAUSED |
 | Stage | REVIEW, INTERVIEW, HIRED, REJECTED |
 | FileType | PDF, DOCX |
+| OAuthProvider | GOOGLE, GITHUB |
 
 ## Reglas
 
@@ -58,3 +61,6 @@ erDiagram
 - `stage` solo lo cambia una persona y cada cambio se registra en `AuditLog`.
 - `Interview.calendarEventId` e `Integration.encryptedToken` van cifrados y no se devuelven por la API.
 - `User.passwordHash` (argon2id) y `User.totpSecretEncrypted` nunca se devuelven por la API. `totpSecretEncrypted` es el secreto del 2FA del ADMIN, cifrado con AES-256-GCM usando `ENCRYPTION_KEY`; es nulo para EMPLOYEE y EMPLOYER.
+- `User.passwordHash` es nulo en cuentas creadas con Google/GitHub hasta que el usuario define una contraseña con "olvidé mi contraseña". `passwordChangedAt` invalida los access tokens emitidos antes del cambio.
+- `OAuthAccount` es única por `(provider, providerAccountId)` y nunca se crea para un ADMIN. Una cuenta existente se vincula por email solo si el proveedor informa el email como verificado.
+- `PasswordResetToken` guarda solo el hash SHA-256 del token; vence a los 30 minutos y es de un solo uso.

@@ -48,12 +48,20 @@ enum FileType {
   DOCX
 }
 
+enum OAuthProvider {
+  GOOGLE
+  GITHUB
+}
+
 // ─────────────────────────── Cuentas ───────────────────────────
 
 model User {
   id                  Int        @id @default(autoincrement())
   email               String     @unique
-  passwordHash        String
+  // Nulo en cuentas creadas con Google/GitHub hasta que se defina una contraseña (recuperar contraseña).
+  passwordHash        String?
+  // Los access tokens emitidos antes de este momento dejan de valer (cambio de contraseña).
+  passwordChangedAt   DateTime?
   role                Role
   status              UserStatus @default(ACTIVE)
   mascotEnabled       Boolean    @default(true)
@@ -70,6 +78,37 @@ model User {
   integrations            Integration[]
   reports                 VacancyReport[]
   auditLogs               AuditLog[]
+  oauthAccounts           OAuthAccount[]
+  passwordResetTokens     PasswordResetToken[]
+}
+
+// Cuenta de Google/GitHub vinculada (login social). Solo EMPLOYEE y EMPLOYER; nunca ADMIN.
+model OAuthAccount {
+  id                Int           @id @default(autoincrement())
+  userId            Int
+  provider          OAuthProvider
+  // Id estable del usuario en el proveedor (sub de Google, id de GitHub).
+  providerAccountId String
+  createdAt         DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+// Token de "olvidé mi contraseña". Solo se guarda el hash SHA-256; de un solo uso y con vencimiento.
+model PasswordResetToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // ─────────────────────────── Lado empleado ───────────────────────────
