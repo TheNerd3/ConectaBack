@@ -51,13 +51,15 @@ enum FileType {
 // ─────────────────────────── Cuentas ───────────────────────────
 
 model User {
-  id            Int        @id @default(autoincrement())
-  email         String     @unique
-  passwordHash  String
-  role          Role
-  status        UserStatus @default(ACTIVE)
-  mascotEnabled Boolean    @default(true)
-  createdAt     DateTime   @default(now())
+  id                  Int        @id @default(autoincrement())
+  email               String     @unique
+  passwordHash        String
+  role                Role
+  status              UserStatus @default(ACTIVE)
+  mascotEnabled       Boolean    @default(true)
+  // Secreto TOTP del 2FA (solo ADMIN). Cifrado con ENCRYPTION_KEY; nunca se devuelve por la API.
+  totpSecretEncrypted String?
+  createdAt           DateTime   @default(now())
 
   employeeProfile         EmployeeProfile?
   companyMembers          CompanyMember[]
@@ -228,7 +230,7 @@ model Vacancy {
   featured    Boolean       @default(false)
   createdAt   DateTime      @default(now())
 
-  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company      Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   skills       VacancySkill[]
   applications Application[]
   cvs          Cv[]

@@ -57,3 +57,4 @@ erDiagram
 - Los datos sensibles del candidato se ocultan según `Application.stage`.
 - `stage` solo lo cambia una persona y cada cambio se registra en `AuditLog`.
 - `Interview.calendarEventId` e `Integration.encryptedToken` van cifrados y no se devuelven por la API.
+- `User.passwordHash` (argon2id) y `User.totpSecretEncrypted` nunca se devuelven por la API. `totpSecretEncrypted` es el secreto del 2FA del ADMIN, cifrado con AES-256-GCM usando `ENCRYPTION_KEY`; es nulo para EMPLOYEE y EMPLOYER.
