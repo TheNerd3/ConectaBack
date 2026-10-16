@@ -19,19 +19,26 @@ import { Public } from './decorators/public.decorator';
 import { Roles } from './decorators/roles.decorator';
 import { AccessTokenDto, AuthUserDto, LoginResponseDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
+import { ForgotPasswordDto, MessageDto, ResetPasswordDto } from './dto/password-reset.dto';
 import { RegisterEmployeeDto } from './dto/register-employee.dto';
 import { RegisterEmployerDto } from './dto/register-employer.dto';
 import { Verify2faDto } from './dto/verify-2fa.dto';
+import { PasswordResetService } from './password-reset.service';
 
 // Límites por IP y por minuto.
 const LOGIN_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
 const REGISTER_THROTTLE = { default: { limit: 10, ttl: 60_000 } };
+const FORGOT_PASSWORD_MESSAGE =
+  'Si existe una cuenta con ese email, te enviamos un link para restablecer la contraseña.';
 
 @ApiTags('auth')
 @ApiTooManyRequestsResponse({ description: 'Demasiados intentos, probá de nuevo en un minuto' })
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly passwordReset: PasswordResetService,
+  ) {}
 
   @Public()
   @Throttle(REGISTER_THROTTLE)
@@ -80,6 +87,34 @@ export class AuthController {
   @ApiUnauthorizedResponse({ description: 'Código inválido o vencido' })
   verify2fa(@Body() dto: Verify2faDto): Promise<AccessTokenDto> {
     return this.auth.verify2fa(dto);
+  }
+
+  @Public()
+  @Throttle(LOGIN_THROTTLE)
+  @Post('password/forgot')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Pide un link para restablecer la contraseña (EMPLOYEE y EMPLOYER)',
+    description: 'Responde siempre lo mismo, exista o no la cuenta. El link vence en 30 minutos.',
+  })
+  @ApiOkResponse({ type: MessageDto })
+  forgotPassword(@Body() dto: ForgotPasswordDto): MessageDto {
+    this.passwordReset.requestReset(dto.email);
+    return { message: FORGOT_PASSWORD_MESSAGE };
+  }
+
+  @Public()
+  @Throttle(LOGIN_THROTTLE)
+  @Post('password/reset')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Define una contraseña nueva con el token del email',
+    description: 'Inicia sesión y cierra las sesiones abiertas antes del cambio.',
+  })
+  @ApiOkResponse({ type: AccessTokenDto })
+  @ApiBadRequestResponse({ description: 'Link inválido, usado o vencido' })
+  resetPassword(@Body() dto: ResetPasswordDto): Promise<AccessTokenDto> {
+    return this.passwordReset.reset(dto.token, dto.password);
   }
 
   @Roles(Role.EMPLOYEE, Role.EMPLOYER, Role.ADMIN)
