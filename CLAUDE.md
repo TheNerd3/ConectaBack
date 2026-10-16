@@ -1,5 +1,9 @@
 # Conecta · Backend (ConectaBack)
 
+## Regla #1: autoría
+- El único autor de este proyecto es Sol. **Nunca** agregar a Claude como autor ni colaborador: sin `Co-Authored-By`, sin `Claude-Session`, sin "Generated with Claude Code" ni firmas en commits, PRs, código, README o docs.
+- Los commits van con la identidad git de Sol (`git config user.name` / `user.email`); no cambiarla.
+
 ## Qué es
 API de una plataforma de búsqueda laboral con tres roles: EMPLOYEE, EMPLOYER y ADMIN. Proyecto personal de portfolio. Diferenciador: **sin filtrado automático de candidatos por IA** y **transparencia total del estado de la postulación**.
 Frontend: repo ConectaFront (React + Vite). Modelo de datos: `prisma/schema.prisma` (fuente de verdad) y `docs/DATABASE.md`.
