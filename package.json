@@ -13,7 +13,7 @@
     "prisma:studio": "prisma studio",
     "db:up": "docker compose up -d db",
     "db:seed": "prisma db seed",
-    "test": "jest"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
@@ -46,5 +46,21 @@
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
+  },
+  "jest": {
+    "rootDir": ".",
+    "testEnvironment": "node",
+    "testRegex": "test/.*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.ts$": "ts-jest"
+    },
+    "moduleFileExtensions": [
+      "ts",
+      "js",
+      "json"
+    ],
+    "setupFiles": [
+      "<rootDir>/test/setup-env.ts"
+    ]
   }
 }
