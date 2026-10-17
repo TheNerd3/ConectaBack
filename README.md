@@ -25,12 +25,13 @@ npm run db:up                 # PostgreSQL en Docker
 npm run mail:up               # Mailpit: SMTP de desarrollo, bandeja en http://localhost:8025
 npx prisma migrate dev        # aplica las migraciones
 npm run db:seed               # crea la cuenta de administración (ver abajo)
+npm run db:seed:demo          # opcional: skills, empresas, vacantes y usuarios de demo
 npm run start:dev             # http://localhost:3000/api
 ```
 
 - Swagger: http://localhost:3000/docs
 - Health check: `GET /api/health`
-- Tests: `npm test`
+- Tests: `npm test` (unitarios y e2e, sin base) y `npm run test:db` (contra Postgres real, ver abajo)
 
 La API no arranca si falta `JWT_SECRET` (mínimo 32 caracteres) o si `ENCRYPTION_KEY` no es una clave de 32 bytes en base64 o hex.
 
@@ -44,6 +45,43 @@ El rol ADMIN no se puede registrar por la API: se crea con `prisma/seed.ts`.
 4. Iniciá sesión en `/admin/login` del front con el email, la contraseña y el código de 6 dígitos de la app.
 
 El seed es idempotente: si el admin ya existe no lo modifica. Para regenerar el 2FA (por ejemplo, si se perdió el celular), corré `ADMIN_RESET_2FA=true npm run db:seed`. El código anterior deja de funcionar.
+
+## Datos de demo
+
+`npm run db:seed:demo` carga 25 skills, 3 empresas verificadas y 12 vacantes variadas, una de ellas pausada:
+
+- **Nimbus Software** (con sello "Empresa Transparente") — empleador `rrhh@nimbus.demo`
+- **Bluecore Labs** — empleador `talento@bluecore.demo`
+- **Atlas Tech** — empleador `empleos@atlastech.demo`
+- Empleado `empleado@conecta.demo`
+
+Todos usan la contraseña `DEMO_PASSWORD` del `.env` (en `.env.example`: `conecta-demo-2026`). Es idempotente y no toca datos existentes. El ADMIN se crea con `npm run db:seed`.
+
+## Tests contra Postgres
+
+`npm run test:db` corre los tests que dependen de consultas reales: vacantes, filtros, orden y permisos.
+
+- Usa la base `conecta_test` del mismo servidor que `DATABASE_URL`, o la de `TEST_DATABASE_URL` si está definida.
+- La crea si no existe y aplica las migraciones con `prisma migrate deploy`.
+- Cada test vacía las tablas, así que el nombre de la base **tiene que terminar en `_test`**: si no, se niega a correr.
+
+## Vacantes
+
+| Endpoint | Acceso | Descripción |
+| --- | --- | --- |
+| `GET /api/vacancies` | EMPLOYEE | Búsqueda paginada: `q`, `modality` (una o varias), `location`, `skillIds` (todas), `salaryMin`, `salaryMax`, `sort=recent|salary`, `page`, `pageSize` |
+| `GET /api/vacancies/:id` | EMPLOYEE | Detalle de una vacante activa |
+| `GET /api/employer/vacancies` | EMPLOYER | Vacantes de mi empresa, estado de la empresa y conteos de postulaciones |
+| `GET /api/employer/vacancies/:id` | EMPLOYER | Detalle de una vacante propia (incluye el salario aunque esté oculto) |
+| `POST /api/employer/vacancies` | EMPLOYER | Publicar (solo empresas `APPROVED`) |
+| `PATCH /api/employer/vacancies/:id` | EMPLOYER | Editar (solo empresas `APPROVED`) |
+| `PATCH /api/employer/vacancies/:id/status` | EMPLOYER | Pausar o reactivar (solo empresas `APPROVED`) |
+| `GET /api/skills?q=` | los tres roles | Catálogo de skills |
+
+- El empleado solo ve vacantes `ACTIVE` de empresas `APPROVED`. Las de empresas con sello Transparente van primero, pero ninguna se oculta.
+- El salario solo se devuelve si la empresa eligió mostrarlo. Los filtros y el orden por salario usan solo los salarios visibles, así que un salario oculto no se puede deducir.
+- Una vacante de otra empresa responde 404 al empleador, para no revelar que existe.
+- Todavía no hay porcentaje de match: llega con el analizador de CV.
 
 ## Autenticación
 
@@ -109,17 +147,20 @@ src/
 ├── prisma/            # PrismaService global
 ├── auth/              # registro, login, 2FA, OAuth, recuperar contraseña, guards y @Public/@Roles
 ├── mail/              # envío de emails por SMTP
+├── skills/            # catálogo de skills
+├── vacancies/         # búsqueda (empleado) y gestión (empleador) de vacantes
 ├── common/crypto.ts   # cifrado AES-256-GCM de secretos
 ├── config/            # validación de variables de entorno
 └── health/
 prisma/seed.ts         # crea la cuenta ADMIN con 2FA
-test/                  # tests unitarios y e2e (Jest)
+prisma/seed-demo.ts    # datos de demo
+test/                  # tests unitarios y e2e (Jest); test/db/ corre contra Postgres
 docs/DATABASE.md       # diagrama y reglas del modelo
 ```
 
 ## Modelo de datos
 
-28 tablas y 7 enumeraciones. Resumen y diagrama en [docs/DATABASE.md](docs/DATABASE.md).
+28 tablas y 8 enumeraciones. Resumen y diagrama en [docs/DATABASE.md](docs/DATABASE.md).
 
 ## Hoja de ruta
 
