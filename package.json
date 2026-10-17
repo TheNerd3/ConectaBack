@@ -14,7 +14,8 @@
     "db:up": "docker compose up -d db",
     "db:seed": "prisma db seed",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-    "mail:up": "docker compose up -d mail"
+    "mail:up": "docker compose up -d mail",
+    "test:db": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config test/db/jest-db.json"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
